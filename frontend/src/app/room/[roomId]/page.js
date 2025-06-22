@@ -15,9 +15,16 @@ import {
   FiCopy,
   FiHash,
   FiUsers,
-  FiEdit3
+  FiEdit3,
+  FiAward
 } from 'react-icons/fi';
 import { BsCircleFill } from 'react-icons/bs';
+import { Frijole } from 'next/font/google';
+
+const frijole = Frijole({
+  weight: '400',
+  subsets: ['latin'],
+});
 
 export default function RoomPage() {
   const params = useParams();
@@ -28,6 +35,65 @@ export default function RoomPage() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // Competitive room state
+  const getInitialTimer = (roomId) => {
+    switch(roomId) {
+      case 'speed-poop-challenge': return 180; // 3 minutes
+      case 'endurance-league': return 600;    // 10 minutes
+      case 'technique-masters': return 300;   // 5 minutes
+      default: return 300;
+    }
+  };
+  
+  const [timeRemaining, setTimeRemaining] = useState(getInitialTimer(roomId));
+  const [playersRemaining, setPlayersRemaining] = useState(4);
+  
+  // Define competitive room IDs
+  const competitiveRoomIds = ['speed-poop-challenge', 'endurance-league', 'technique-masters'];
+  const isCompetitiveRoom = competitiveRoomIds.includes(roomId);
+  
+  // Timer effect for competitive rooms
+  useEffect(() => {
+    if (!isCompetitiveRoom) return;
+    
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isCompetitiveRoom]);
+  
+  // Player elimination effect for competitive rooms
+  useEffect(() => {
+    if (!isCompetitiveRoom || timeRemaining <= 0) return;
+    
+    const eliminationTimer = setInterval(() => {
+      setPlayersRemaining(prev => {
+        if (prev <= 1) return prev; // Keep at least 1 player
+        // 20% chance of elimination every 30 seconds
+        if (Math.random() < 0.2) {
+          return prev - 1;
+        }
+        return prev;
+      });
+    }, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(eliminationTimer);
+  }, [isCompetitiveRoom, timeRemaining]);
+  
+  // Format time display
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -110,26 +176,26 @@ export default function RoomPage() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-800 text-white">
+    <div className="flex h-screen bg-amber-50 text-gray-800">
       {/* Chat Panel */}
-      <div className="w-80 bg-gray-900 flex flex-col">
+      <div className="w-80 bg-white flex flex-col border-r border-amber-200 shadow-lg">
         {/* Chat Header */}
-        <div className="px-4 py-3 border-b border-gray-700">
+        <div className="px-4 py-3 border-b border-amber-200 bg-amber-100">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-lg flex items-center">
-              <FiHash className="text-gray-400 w-5 h-5" />
+            <h2 className="font-semibold text-lg flex items-center text-amber-900">
+              <FiHash className="text-amber-600 w-5 h-5" />
               <span className="ml-2">room-chat</span>
             </h2>
             <button
               onClick={copyRoomId}
-              className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded flex items-center gap-1"
+              className="text-xs bg-amber-200 hover:bg-amber-300 text-amber-800 px-2 py-1 rounded flex items-center gap-1 transition-colors"
               title="Copy Room ID"
             >
               <FiCopy className="w-3 h-3" />
               {roomId.slice(0, 8)}...
             </button>
           </div>
-          <div className="text-xs text-gray-400 mt-1">Room ID: {roomId}</div>
+          <div className="text-xs text-amber-600 mt-1">Room ID: {roomId}</div>
         </div>
         
         {/* Chat Messages */}
@@ -138,14 +204,14 @@ export default function RoomPage() {
             {messages.map((msg) => (
               <div key={msg.id} className="flex items-start space-x-3">
                 <div className={`w-8 h-8 bg-${msg.color}-500 rounded-full flex items-center justify-center flex-shrink-0`}>
-                  <span className="text-sm font-semibold">{msg.avatar}</span>
+                  <span className="text-sm font-semibold text-white">{msg.avatar}</span>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center space-x-2">
-                    <span className={`font-medium text-${msg.color}-300`}>{msg.user}</span>
-                    <span className="text-xs text-gray-400">{msg.time}</span>
+                    <span className={`font-medium text-${msg.color}-600`}>{msg.user}</span>
+                    <span className="text-xs text-amber-600">{msg.time}</span>
                   </div>
-                  <p className="text-gray-300 mt-1">{msg.content}</p>
+                  <p className="text-gray-700 mt-1">{msg.content}</p>
                 </div>
               </div>
             ))}
@@ -153,7 +219,7 @@ export default function RoomPage() {
         </div>
         
         {/* Chat Input */}
-        <div className="p-4 border-t border-gray-700">
+        <div className="p-4 border-t border-amber-200">
           <div className="flex items-center space-x-2">
             <input
               type="text"
@@ -161,11 +227,11 @@ export default function RoomPage() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              className="flex-1 bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+              className="flex-1 bg-amber-50 text-gray-800 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-amber-600 border border-amber-200"
             />
             <button
               onClick={sendMessage}
-              className="p-2 text-gray-400 hover:text-white"
+              className="p-2 text-amber-600 hover:text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
             >
               <FiSend className="w-5 h-5" />
             </button>
@@ -176,29 +242,37 @@ export default function RoomPage() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
+        <div className="bg-amber-200 px-4 py-3 border-b border-amber-300 shadow-md">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <FiUsers className="mr-2 w-5 h-5 text-green-400" />
-              <h3 className="font-semibold">Poop and Chat Room</h3>
-              <span className="ml-2 text-sm text-gray-400">({roomId})</span>
+              <div className="flex items-center gap-2 mr-4">
+                <img 
+                  src="/poop_king.png" 
+                  alt="Poop King Crown" 
+                  className="w-8 h-8 drop-shadow-sm"
+                />
+                <h3 className={`font-bold text-amber-900 text-xl ${frijole.className}`}>
+                  PUBLICPOOPER
+                </h3>
+              </div>
+              <span className="text-sm text-amber-700">Room: {roomId}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <button className="p-2 hover:bg-gray-600 rounded" title="Call">
+              <button className="p-2 hover:bg-amber-300 rounded-lg transition-colors text-amber-800" title="Call">
                 <FiPhoneCall className="w-5 h-5" />
               </button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Video">
+              <button className="p-2 hover:bg-amber-300 rounded-lg transition-colors text-amber-800" title="Video">
                 <FiVideo className="w-5 h-5" />
               </button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Screen Share">
+              <button className="p-2 hover:bg-amber-300 rounded-lg transition-colors text-amber-800" title="Screen Share">
                 <FiMonitor className="w-5 h-5" />
               </button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Settings">
+              <button className="p-2 hover:bg-amber-300 rounded-lg transition-colors text-amber-800" title="Settings">
                 <FiSettings className="w-5 h-5" />
               </button>
               <button
                 onClick={leaveRoom}
-                className="p-2 hover:bg-red-600 bg-red-500 rounded text-white"
+                className="p-2 hover:bg-red-600 bg-red-500 rounded-lg text-white transition-colors shadow-md"
                 title="Leave Room"
               >
                 <FiLogOut className="w-5 h-5" />
@@ -207,13 +281,59 @@ export default function RoomPage() {
           </div>
         </div>
 
+        {/* Competitive Room Timer & Stats */}
+        {isCompetitiveRoom && (
+          <div className="bg-amber-100 border-b border-amber-300 px-6 py-4">
+            <div className="flex items-center justify-between max-w-6xl mx-auto">
+              {/* Timer */}
+              <div className="flex items-center space-x-3">
+                <div className="bg-amber-600 text-white p-3 rounded-full shadow-md">
+                  <FiEdit3 className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-medium text-amber-700">Time Remaining</div>
+                  <div className={`text-3xl font-bold ${timeRemaining <= 60 ? 'text-red-600' : 'text-amber-900'}`}>
+                    {formatTime(timeRemaining)}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Players Remaining */}
+              <div className="flex items-center space-x-3">
+                <div className="bg-green-600 text-white p-3 rounded-full shadow-md">
+                  <FiUsers className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-medium text-amber-700">Players Remaining</div>
+                  <div className="text-3xl font-bold text-amber-900">
+                    {playersRemaining}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Competition Status */}
+              <div className="flex items-center space-x-3">
+                <div className="bg-orange-600 text-white p-3 rounded-full shadow-md">
+                  <FiAward className="w-6 h-6" />
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-medium text-amber-700">Competition</div>
+                  <div className="text-xl font-bold text-orange-600">
+                    {timeRemaining > 0 ? 'IN PROGRESS' : 'FINISHED'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Video Grid */}
         <div className="flex-1 p-4">
           <div className="grid grid-cols-2 gap-4 h-full">
             {videoParticipants.map((participant, index) => (
               <div
                 key={participant.name}
-                className="relative bg-gray-600 rounded-lg overflow-hidden flex items-center justify-center"
+                className="relative bg-amber-100 border-2 border-amber-200 rounded-lg overflow-hidden flex items-center justify-center"
               >
                 {/* Video Content */}
                 <div className="w-full h-full flex items-center justify-center text-4xl">
@@ -221,7 +341,7 @@ export default function RoomPage() {
                 </div>
                 
                 {/* User Info Overlay */}
-                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
+                <div className="absolute bottom-2 left-2 bg-amber-800 bg-opacity-80 px-2 py-1 rounded text-sm text-white">
                   {participant.name}
                   {participant.isLive && (
                     <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
@@ -233,7 +353,7 @@ export default function RoomPage() {
 
                 {/* Pooping Indicator */}
                 {participant.isPooping && (
-                  <div className="absolute top-2 right-2 bg-brown-500 p-2 rounded flex items-center justify-center">
+                  <div className="absolute top-2 right-2 bg-amber-600 p-2 rounded flex items-center justify-center">
                     <FiEdit3 className="w-4 h-4 text-white" />
                   </div>
                 )}
@@ -242,8 +362,8 @@ export default function RoomPage() {
           </div>
 
           {/* Main Screen Share Area */}
-          <div className="mt-4 bg-gray-700 rounded-lg p-4 text-center">
-            <div className="bg-white text-black p-8 rounded inline-block">
+          <div className="mt-4 bg-amber-100 border-2 border-amber-300 rounded-lg p-4 text-center">
+            <div className="bg-white text-amber-900 p-8 rounded inline-block border border-amber-200 shadow-lg">
               <div className="text-6xl mb-4">🚽</div>
               <div className="text-xl font-semibold">Nelly's Toilet Stream</div>
               <div className="text-red-500 font-bold flex items-center justify-center gap-2">
@@ -255,11 +375,11 @@ export default function RoomPage() {
         </div>
 
         {/* Control Bar */}
-        <div className="bg-gray-800 px-4 py-3 flex items-center justify-center space-x-4">
+        <div className="bg-amber-200 border-t border-amber-300 px-4 py-3 flex items-center justify-center space-x-4">
           <button
             onClick={() => setIsMuted(!isMuted)}
-            className={`p-3 rounded-full ${
-              isMuted ? 'bg-red-500' : 'bg-gray-600 hover:bg-gray-500'
+            className={`p-3 rounded-full text-white transition-colors ${
+              isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-600 hover:bg-amber-700'
             }`}
             title={isMuted ? 'Unmute' : 'Mute'}
           >
@@ -268,8 +388,8 @@ export default function RoomPage() {
           
           <button
             onClick={() => setIsVideoOff(!isVideoOff)}
-            className={`p-3 rounded-full ${
-              isVideoOff ? 'bg-red-500' : 'bg-gray-600 hover:bg-gray-500'
+            className={`p-3 rounded-full text-white transition-colors ${
+              isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-600 hover:bg-amber-700'
             }`}
             title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
           >
@@ -278,8 +398,8 @@ export default function RoomPage() {
           
           <button
             onClick={() => setIsScreenSharing(!isScreenSharing)}
-            className={`p-3 rounded-full ${
-              isScreenSharing ? 'bg-green-500' : 'bg-gray-600 hover:bg-gray-500'
+            className={`p-3 rounded-full text-white transition-colors ${
+              isScreenSharing ? 'bg-green-500 hover:bg-green-600' : 'bg-amber-600 hover:bg-amber-700'
             }`}
             title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
           >
@@ -288,7 +408,7 @@ export default function RoomPage() {
           
           <button
             onClick={leaveRoom}
-            className="p-3 rounded-full bg-red-500 hover:bg-red-600"
+            className="p-3 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors"
             title="Leave call"
           >
             <FiPhone className="w-5 h-5" />
