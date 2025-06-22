@@ -113,7 +113,7 @@ export default function Home() {
         </div>
 
         <div className="text-center mt-6 text-sm text-gray-400">
-          <p>Share room IDs with friends to collaborate together</p>
+          <p>Share room IDs with friends to poop together</p>
         </div>
       </div>
     </div>
