@@ -1,0 +1,31 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Watch Stream</title>
+</head>
+<body>
+  <h1>Watch Stream (WebRTC)</h1>
+  <video id="remoteVideo" autoplay playsinline controls width="640" height="360"></video>
+  <button onclick="startViewing()">Start Viewing</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/srs-sdk@4.0.78/browser/srs.sdk.js"></script>
+  <script>
+    async function startViewing() {
+      const videoElement = document.getElementById('remoteVideo');
+      const player = new SrsRtcPlayerAsync();
+
+      try {
+        const url = 'webrtc://localhost/live/mystream'; // Match stream name
+        await player.init({ url });
+        const stream = await player.play();
+        videoElement.srcObject = stream;
+        console.log('✅ WebRTC viewer connected');
+      } catch (err) {
+        console.error('❌ Viewer failed:', err);
+      }
+    }
+  </script>
+</body>
+</html>
+

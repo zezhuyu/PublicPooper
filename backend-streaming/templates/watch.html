@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Viewer</title>
+</head>
+<body>
+  <h1>Watching Stream: {{ stream_id }}</h1>
+  <video id="remote" autoplay playsinline controls></video>
+  <script>
+    const streamId = "{{ stream_id }}";
+  </script>
+  <script src="/static/webrtc.js"></script>
+  <script>
+    setupWebRTC('viewer', streamId);
+  </script>
+</body>
+</html>
+
