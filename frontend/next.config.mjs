@@ -4,7 +4,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://air.local:8000/:path*',
+        destination: 'http://air.local:8000/:path*', // Backend development server
       },
     ];
   },

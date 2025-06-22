@@ -23,6 +23,7 @@ import { BsCircleFill } from 'react-icons/bs';
 import { Frijole } from 'next/font/google';
 import { useUser } from '../../../contexts/UserContext';
 import apiService from '../../../services/api';
+import setupWebRTC from '../../../utils/webrtc';
 
 const frijole = Frijole({
   weight: '400',
@@ -45,6 +46,16 @@ export default function RoomPage() {
   const [apiError, setApiError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   
+  // WebRTC state
+  const [localStream, setLocalStream] = useState(null);
+  const [isStreamingEnabled, setIsStreamingEnabled] = useState(false);
+  const [signalingServerStatus, setSignalingServerStatus] = useState('unknown'); // 'available', 'unavailable', 'unknown'
+  const localVideoRef = useRef(null);
+  const webrtcCleanupFunctions = useRef([]); // Store cleanup functions
+  
+  // WebRTC debug information state
+  const [webrtcDebugInfo, setWebrtcDebugInfo] = useState([]);
+
   // Competitive room state
   const getInitialTimer = (roomDetails) => {
     if (roomDetails?.type === 'competitive') {
@@ -66,6 +77,165 @@ export default function RoomPage() {
   // Determine if competitive room based on room details
   const isCompetitiveRoom = roomDetails?.type === 'competitive' || 
                            ['speed-poop-challenge', 'endurance-league', 'technique-masters'].includes(roomDetails?.rname || roomId);
+
+  // WebRTC functions
+  const initializeWebRTC = async () => {
+    try {
+      setApiError(''); // Clear any previous errors
+      console.log('Initializing WebRTC for room:', roomId, 'user:', user.uid);
+      
+      // Test if signaling server is available first
+      const wsHost = process.env.NODE_ENV === 'production' ? window.location.host : 'air.local:8000';
+      const wsProtocol = 'ws'; // Always use secure WebSocket globally
+      const testStreamId = `test-${Date.now()}`; // Use unique test stream ID
+      const testUrl = `${wsProtocol}://${wsHost}/signal/${testStreamId}/viewer`;
+      
+      console.log('Testing signaling server availability at:', testUrl);
+      console.log('Using secure protocol globally:', wsProtocol);
+      
+      const testWs = new WebSocket(testUrl);
+      let connectionTimeout;
+      
+      const testPromise = new Promise((resolve, reject) => {
+        connectionTimeout = setTimeout(() => {
+          testWs.close();
+          reject(new Error('Connection timeout'));
+        }, 5000);
+        
+        testWs.onopen = () => {
+          clearTimeout(connectionTimeout);
+          testWs.close();
+          resolve(true);
+        };
+        
+        testWs.onerror = () => {
+          clearTimeout(connectionTimeout);
+          reject(new Error('Connection failed'));
+        };
+      });
+      
+      try {
+        await testPromise;
+        console.log('Signaling server is available, proceeding with WebRTC setup');
+        setSignalingServerStatus('available');
+        
+        // Clean up any existing connections first
+        stopWebRTC();
+        
+        // Setup as broadcaster (sharing our video) first
+        console.log(`Setting up broadcaster for user: ${user.uid}`);
+        const broadcasterCleanup = setupWebRTC('broadcaster', user.uid, 'local', updateDebugInfo);
+        if (broadcasterCleanup) {
+          webrtcCleanupFunctions.current.push(broadcasterCleanup);
+        }
+        
+        // Wait a bit before setting up viewer connections to avoid conflicts
+        setTimeout(() => {
+          // Setup as viewer for each connected user
+          connectedUsers.forEach((userObj, index) => {
+            const userId = userObj.uid || userObj.id || userObj.user_id;
+            if (userId && userId !== user.uid && typeof userId === 'string') {
+              console.log(`Setting up viewer for user: ${userId} (delay: ${index * 1000}ms)`);
+              setTimeout(() => {
+                const viewerCleanup = setupWebRTC('viewer', userId, `remote-${userId}`, updateDebugInfo);
+                if (viewerCleanup) {
+                  webrtcCleanupFunctions.current.push(viewerCleanup);
+                }
+              }, index * 1000); // Stagger the connections by 1 second each
+            } else {
+              console.warn('Skipping invalid userId in connectedUsers:', userId);
+            }
+          });
+        }, 2000); // Wait 2 seconds after broadcaster setup
+        
+        setIsStreamingEnabled(true);
+        console.log('WebRTC enabled successfully');
+        
+      } catch (testError) {
+        console.warn('Signaling server not available:', testError.message);
+        setSignalingServerStatus('unavailable');
+        setApiError(`Video chat server not available at ${wsHost}. Please start the backend signaling server with SSL/WSS support.`);
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Failed to initialize WebRTC:', error);
+      setApiError('Video streaming not available. Camera/microphone access may be blocked or signaling server is down.');
+    }
+  };
+
+  const stopWebRTC = () => {
+    // Call all cleanup functions
+    webrtcCleanupFunctions.current.forEach(cleanup => {
+      try {
+        cleanup();
+      } catch (error) {
+        console.error('Error during WebRTC cleanup:', error);
+      }
+    });
+    webrtcCleanupFunctions.current = [];
+    
+    setIsStreamingEnabled(false);
+    setLocalStream(null);
+    setWebrtcDebugInfo([]); // Clear debug info
+    
+    // Clear video elements
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    
+    // Clear all remote video elements
+    connectedUsers.forEach(userObj => {
+      const userId = userObj.uid || userObj.id || userObj.user_id;
+      if (userId) {
+        const remoteVideo = document.getElementById(`remote-${userId}`);
+        if (remoteVideo) {
+          remoteVideo.srcObject = null;
+        }
+      }
+    });
+  };
+
+  const addUserToWebRTC = (userId) => {
+    console.log('addUserToWebRTC called with userId:', userId, 'type:', typeof userId);
+    
+    // Validate userId
+    if (!userId || userId === 'connection-test' || typeof userId !== 'string') {
+      console.error('Invalid userId for WebRTC:', userId);
+      return;
+    }
+    
+    if (isStreamingEnabled && userId !== user.uid) {
+      console.log(`Adding new user to WebRTC: ${userId}`);
+      console.log(`Current user ${user.uid} setting up as viewer for user ${userId}`);
+      
+      // Add a delay to avoid conflicts with the new user's broadcaster setup
+      setTimeout(() => {
+        console.log(`About to call setupWebRTC with: role='viewer', streamId='${userId}', videoId='remote-${userId}'`);
+        const viewerCleanup = setupWebRTC('viewer', userId, `remote-${userId}`, updateDebugInfo);
+        if (viewerCleanup) {
+          webrtcCleanupFunctions.current.push(viewerCleanup);
+          console.log(`Successfully added viewer connection for user: ${userId}`);
+        } else {
+          console.error(`Failed to create viewer connection for user: ${userId}`);
+        }
+      }, 3000); // Wait 3 seconds to let the new user establish their broadcaster connection
+    } else {
+      console.log(`Not adding user to WebRTC: streaming=${isStreamingEnabled}, userId=${userId}, currentUser=${user.uid}`);
+    }
+  };
+
+  const toggleVideo = () => {
+    setIsVideoOff(!isVideoOff);
+    // Note: The original backend WebRTC doesn't have toggle functionality
+    // This would need to be implemented in the backend WebRTC file
+  };
+
+  const toggleAudio = () => {
+    setIsMuted(!isMuted);
+    // Note: The original backend WebRTC doesn't have toggle functionality  
+    // This would need to be implemented in the backend WebRTC file
+  };
 
   // WebSocket connection and room initialization
   useEffect(() => {
@@ -235,6 +405,12 @@ export default function RoomPage() {
     const handleWebSocketMessage = (data) => {
       switch (data.type) {
         case 'chat':
+          // Skip processing if this is our own message (we already added it immediately)
+          if (data.uid === user.uid) {
+            console.log('Skipping own message from WebSocket to avoid duplicate');
+            return;
+          }
+          
           // Try to get a readable name, with better fallback for UUIDs
           let userName = getUserName(data.uid);
           
@@ -255,7 +431,7 @@ export default function RoomPage() {
           }
           
           const newMessage = {
-            id: Date.now(),
+            id: Date.now() + Math.random(), // Ensure unique ID
             user: userName,
             avatar: getUserAvatar(data.uid),
             color: ['blue', 'green', 'purple', 'orange', 'red'][Math.floor(Math.random() * 5)],
@@ -265,8 +441,16 @@ export default function RoomPage() {
           setMessages(prev => [...prev, newMessage]);
           break;
         case 'user_joined':
-          console.log('User joined:', data.user_id);
+          console.log('User joined event received:', data);
+          console.log('User joined - user_id:', data.user_id, 'type:', typeof data.user_id);
           refreshConnectedUsers();
+          // Add new user to WebRTC if streaming is enabled
+          if (data.user_id && data.user_id !== 'connection-test' && typeof data.user_id === 'string') {
+            console.log('Valid user_id, adding to WebRTC:', data.user_id);
+            addUserToWebRTC(data.user_id);
+          } else {
+            console.warn('Invalid or missing user_id in user_joined event:', data.user_id);
+          }
           break;
         case 'user_left':
           console.log('User left:', data.user_id);
@@ -299,12 +483,13 @@ export default function RoomPage() {
       }
     }, 30000);
 
-    // Cleanup WebSocket and interval on unmount
+    // Cleanup WebSocket, interval, and WebRTC on unmount
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
       clearInterval(userRefreshInterval);
+      stopWebRTC(); // Clean up WebRTC connections
     };
   }, [isLoggedIn, user, roomId, isCompetitiveRoom, router]);
 
@@ -359,6 +544,15 @@ export default function RoomPage() {
     console.log('Getting user name for UID:', uid);
     console.log('Connected users:', connectedUsers);
     
+    // First check if this is the current user
+    if (user && (user.uid === uid || user.id === uid)) {
+      const currentUserName = user.uname || user.name || user.username || user.email;
+      if (currentUserName) {
+        console.log('Resolved current user name:', currentUserName);
+        return currentUserName;
+      }
+    }
+    
     // Try different possible user ID fields and name fields
     const foundUser = connectedUsers.find(u => 
       u.uid === uid || 
@@ -383,14 +577,6 @@ export default function RoomPage() {
       const cachedName = userCache[uid].name || userCache[uid].username || userCache[uid].uname;
       if (cachedName) {
         return cachedName;
-      }
-    }
-    
-    // If user not found in connected users, try to get from current user context if it's them
-    if (user && (user.uid === uid || user.id === uid)) {
-      const currentUserName = user.uname || user.name || user.username || user.email;
-      if (currentUserName) {
-        return currentUserName;
       }
     }
     
@@ -431,38 +617,49 @@ export default function RoomPage() {
   const sendMessage = async () => {
     if (!message.trim()) return;
     
+    // Immediately add the message to the UI for better UX
+    const currentUserName = user?.uname || user?.name || user?.email || 'You';
+    const immediateMessage = {
+      id: Date.now(),
+      user: currentUserName,
+      avatar: currentUserName.charAt(0).toUpperCase(),
+      color: 'indigo',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      content: message
+    };
+    setMessages(prev => [...prev, immediateMessage]);
+    
+    const messageToSend = message;
+    setMessage(''); // Clear input immediately
+    
     try {
       // Send via WebSocket if connected
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'chat',
-          comment: message,
+          comment: messageToSend,
           targetUid: null
         }));
       } else {
         // Fallback to HTTP API
         const roomRid = roomDetails?.rid || roomId;
         await apiService.sendChatMessage(roomRid, user.uid, {
-          comment: message,
+          comment: messageToSend,
           targetUid: null
         });
       }
       
-      setMessage('');
     } catch (error) {
       console.error('Failed to send message:', error);
       
-      // Add message locally in offline mode
-      const newMessage = {
-        id: Date.now(),
-        user: user?.uname || 'You',
-        avatar: (user?.uname || 'You').charAt(0).toUpperCase(),
-        color: 'indigo',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        content: message + ' (offline)'
-      };
-      setMessages(prev => [...prev, newMessage]);
-      setMessage('');
+      // Update the message to show it failed to send
+      setMessages(prev => prev.map(msg => 
+        msg.id === immediateMessage.id ? {
+          ...msg,
+          content: msg.content + ' (failed to send)',
+          color: 'red'
+        } : msg
+      ));
       
       if (error.message.includes('CORS_ERROR')) {
         setApiError('Message sending blocked by CORS policy.');
@@ -518,6 +715,39 @@ export default function RoomPage() {
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
     // You could add a toast notification here
+  };
+
+  const reconnectWebRTC = () => {
+    console.log('Manually reconnecting WebRTC...');
+    if (isStreamingEnabled) {
+      setIsStreamingEnabled(false);
+      setTimeout(() => {
+        initializeWebRTC();
+      }, 1000);
+    } else {
+      initializeWebRTC();
+    }
+  };
+
+  const updateDebugInfo = (streamId, role, state, details) => {
+    // Filter out test connections from debug info
+    if (streamId.startsWith('test-') || streamId === 'connection-test') {
+      console.log(`Skipping debug info for test connection: ${streamId}`);
+      return;
+    }
+    
+    setWebrtcDebugInfo(prev => {
+      const existing = prev.find(info => info.streamId === streamId && info.role === role);
+      if (existing) {
+        return prev.map(info => 
+          info.streamId === streamId && info.role === role 
+            ? { ...info, state, details, timestamp: Date.now() }
+            : info
+        );
+      } else {
+        return [...prev, { streamId, role, state, details, timestamp: Date.now() }];
+      }
+    });
   };
 
   return (
@@ -598,9 +828,37 @@ export default function RoomPage() {
                   PUBLICPOOPER
                 </h3>
               </div>
-              <span className="text-sm text-amber-700">
-                Room: {roomDetails?.rname || roomId}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-amber-700">
+                  Room: {roomDetails?.rname || roomId}
+                </span>
+                {/* Signaling Server Status Indicator */}
+                <div className="flex items-center gap-1 text-xs">
+                  <BsCircleFill 
+                    className={`w-2 h-2 ${
+                      signalingServerStatus === 'available' 
+                        ? 'text-green-500' 
+                        : signalingServerStatus === 'unavailable' 
+                        ? 'text-red-500' 
+                        : 'text-gray-400'
+                    }`} 
+                  />
+                  <span className={`${
+                    signalingServerStatus === 'available' 
+                      ? 'text-green-700' 
+                      : signalingServerStatus === 'unavailable' 
+                      ? 'text-red-700' 
+                      : 'text-gray-600'
+                  }`}>
+                    {signalingServerStatus === 'available' 
+                      ? 'Video Server Online' 
+                      : signalingServerStatus === 'unavailable' 
+                      ? 'Video Server Offline' 
+                      : 'Checking Video Server...'
+                    }
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="flex items-center space-x-2">
               <button className="p-2 hover:bg-amber-300 rounded-lg transition-colors text-amber-800" title="Call">
@@ -708,51 +966,119 @@ export default function RoomPage() {
 
         {/* Video Grid */}
         <div className="flex-1 p-4">
-          <div className="grid grid-cols-2 gap-4 h-full">
+          <div className="grid grid-cols-3 gap-3 max-h-96">
+            {/* Local video (current user) - ID must be 'local' for backend WebRTC */}
+            <div className="relative bg-amber-100 border-2 border-amber-200 rounded-lg overflow-hidden h-48">
+              <video
+                id="local"
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">You ({user?.uname || user?.name || 'Unknown'})</span>
+                  <div className="flex items-center space-x-2">
+                    <BsCircleFill className="w-2 h-2 text-green-500" />
+                  </div>
+                </div>
+              </div>
+              <div className="absolute top-2 right-2 flex space-x-1">
+                <button 
+                  onClick={toggleAudio}
+                  className={`p-1 rounded transition-opacity ${
+                    isMuted ? 'bg-red-500 text-white' : 'bg-black bg-opacity-50 text-white hover:bg-opacity-70'
+                  }`}
+                >
+                  {isMuted ? <FiMicOff className="w-4 h-4" /> : <FiMic className="w-4 h-4" />}
+                </button>
+                <button 
+                  onClick={toggleVideo}
+                  className={`p-1 rounded transition-opacity ${
+                    isVideoOff ? 'bg-red-500 text-white' : 'bg-black bg-opacity-50 text-white hover:bg-opacity-70'
+                  }`}
+                >
+                  {isVideoOff ? <FiVideoOff className="w-4 h-4" /> : <FiVideo className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            
             {connectedUsers.length > 0 ? (
-              connectedUsers.map((userObj, index) => {
-                const uid = userObj.uid || userObj.id || userObj.user_id || `user-${index}`;
-                const userName = getUserName(uid);
-                
-                return (
-                  <div
-                    key={uid}
-                    className="relative bg-amber-100 border-2 border-amber-200 rounded-lg overflow-hidden flex items-center justify-center"
-                  >
-                    {/* Video Content */}
-                    <div className="w-full h-full flex items-center justify-center text-4xl">
-                      🚽
-                    </div>
+              connectedUsers
+                .filter(userObj => {
+                  const uid = userObj.uid || userObj.id || userObj.user_id;
+                  return uid !== user.uid; // Don't show current user in remote videos
+                })
+                .slice(0, 5) // Limit to 5 remote users for grid layout
+                .map((userObj, index) => {
+                  const uid = userObj.uid || userObj.id || userObj.user_id || `user-${index}`;
+                  const userName = getUserName(uid);
+                  const videoId = `remote-${uid}`;
+                  
+                  return (
+                    <div
+                      key={uid}
+                      className="relative bg-amber-100 border-2 border-amber-200 rounded-lg overflow-hidden flex items-center justify-center h-48"
+                    >
+                      {/* Video Content - ID must match backend WebRTC expectations */}
+                      <video
+                        id={videoId}
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                      
+                      {/* Fallback content when no video stream */}
+                      <div className="absolute inset-0 flex items-center justify-center text-4xl pointer-events-none">
+                        🚽
+                      </div>
 
-                    {/* Participant Info */}
-                    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold">{userName}</span>
-                        <div className="flex items-center space-x-2">
-                          <BsCircleFill className="w-2 h-2 text-green-500" />
+                      {/* Participant Info */}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white p-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold">{userName}</span>
+                          <div className="flex items-center space-x-2">
+                            <BsCircleFill className="w-2 h-2 text-green-500" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status Icons */}
+                      <div className="absolute top-2 right-2 flex space-x-1">
+                        <div className="p-1 bg-black bg-opacity-50 text-white rounded">
+                          <FiMic className="w-4 h-4" />
+                        </div>
+                        <div className="p-1 bg-black bg-opacity-50 text-white rounded">
+                          <FiVideo className="w-4 h-4" />
                         </div>
                       </div>
                     </div>
-
-                    {/* Controls */}
-                    <div className="absolute top-2 right-2 flex space-x-1">
-                      <button className="p-1 bg-black bg-opacity-50 text-white rounded hover:bg-opacity-70 transition-opacity">
-                        <FiMic className="w-4 h-4" />
-                      </button>
-                      <button className="p-1 bg-black bg-opacity-50 text-white rounded hover:bg-opacity-70 transition-opacity">
-                        <FiVideo className="w-4 h-4" />
-                      </button>
-                    </div>
+                  );
+                })
+            ) : null}
+            
+            {/* WebRTC Debug Info Panel (only show when streaming is enabled) */}
+            {isStreamingEnabled && webrtcDebugInfo.length > 0 && (
+              <div className="col-span-3 mb-4">
+                <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">WebRTC Debug Info</h4>
+                  <div className="text-xs text-gray-600 space-y-1 max-h-32 overflow-y-auto">
+                    {webrtcDebugInfo
+                      .filter(info => !info.streamId.startsWith('test-') && info.streamId !== 'connection-test')
+                      .map((info, index) => (
+                        <div key={index} className="flex justify-between">
+                          <span>{info.role}:{info.streamId}</span>
+                          <span className={`${
+                            info.state === 'connected' ? 'text-green-600' : 
+                            info.state === 'failed' ? 'text-red-600' : 'text-yellow-600'
+                          }`}>
+                            {info.state}
+                          </span>
+                        </div>
+                      ))}
                   </div>
-                );
-              })
-            ) : (
-              // Show empty state when no users are connected
-              <div className="col-span-2 flex items-center justify-center text-amber-600 text-lg min-h-[300px]">
-                <div className="text-center">
-                  <FiUsers className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No users connected</p>
-                  <p className="text-sm opacity-70">Waiting for participants to join...</p>
                 </div>
               </div>
             )}
@@ -763,14 +1089,14 @@ export default function RoomPage() {
         <div className="bg-amber-200 p-4 border-t border-amber-300">
           <div className="flex justify-center space-x-4">
             <button
-              onClick={() => setIsMuted(!isMuted)}
+              onClick={toggleAudio}
               className={`p-3 rounded-full transition-colors ${isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted ? <FiMicOff className="w-5 h-5" /> : <FiMic className="w-5 h-5" />}
             </button>
             <button
-              onClick={() => setIsVideoOff(!isVideoOff)}
+              onClick={toggleVideo}
               className={`p-3 rounded-full transition-colors ${isVideoOff ? 'bg-red-500 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
               title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
             >
@@ -783,6 +1109,24 @@ export default function RoomPage() {
             >
               <FiMonitor className="w-5 h-5" />
             </button>
+            {!isStreamingEnabled && (
+              <button
+                onClick={initializeWebRTC}
+                className="p-3 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors"
+                title="Start Video Chat"
+              >
+                <FiVideo className="w-5 h-5" />
+              </button>
+            )}
+            {isStreamingEnabled && (
+              <button
+                onClick={reconnectWebRTC}
+                className="p-3 rounded-full bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                title="Reconnect Video Chat"
+              >
+                <FiAlertCircle className="w-5 h-5" />
+              </button>
+            )}
             <button className="p-3 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors" title="Settings">
               <FiSettings className="w-5 h-5" />
             </button>

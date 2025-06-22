@@ -80,7 +80,7 @@ export default function Home() {
       // Handle specific CORS errors
       if (error.message.includes('CORS_ERROR')) {
         console.log('CORS error detected, providing user guidance');
-        setApiError('Connection blocked by CORS policy. Please ensure the backend server at http://air.local:8000 is running and has CORS enabled.');
+        setApiError('Connection blocked by CORS policy. Please ensure the backend server is running with HTTPS/SSL support and has CORS enabled.');
         return;
       }
       
@@ -349,7 +349,7 @@ export default function Home() {
                 <div className="bg-red-100 p-3 rounded-lg border border-red-200">
                   <p className="text-red-800 text-xs font-semibold mb-2">To fix this CORS issue:</p>
                   <ul className="text-red-700 text-xs space-y-1">
-                    <li>1. Ensure the backend server is running at http://air.local:8000</li>
+                    <li>1. Ensure the backend server is running with HTTPS/SSL support</li>
                     <li>2. The server must have CORS headers configured (Access-Control-Allow-Origin)</li>
                     <li>3. Check that the server allows requests from this domain</li>
                   </ul>
@@ -524,7 +524,7 @@ export default function Home() {
                   <div className="bg-red-100 p-3 rounded-lg border border-red-200">
                     <p className="text-red-800 text-xs font-semibold mb-2">To fix this CORS issue:</p>
                     <ul className="text-red-700 text-xs space-y-1">
-                      <li>1. Ensure the backend server is running at http://air.local:8000</li>
+                      <li>1. Ensure the backend server is running with HTTPS/SSL support</li>
                       <li>2. The server must have CORS headers configured (Access-Control-Allow-Origin)</li>
                       <li>3. Check that the server allows requests from this domain</li>
                     </ul>

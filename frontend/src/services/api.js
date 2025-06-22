@@ -1,9 +1,21 @@
-// API Service for PublicPooper Backend
-const API_BASE_URL = 'http://air.local:8000';
+// API Service for PublicPooper Backend - Development Configuration
+const getApiBaseUrl = () => {
+  if (typeof window === 'undefined') return 'http://air.local:8000'; // SSR fallback
+  
+  if (process.env.NODE_ENV === 'production') {
+    return `https://${window.location.host}`;
+  }
+  
+  // Development: Use air.local backend
+  return 'http://air.local:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 class ApiService {
   constructor() {
     this.baseUrl = API_BASE_URL;
+    console.log('API Service initialized with base URL:', this.baseUrl);
   }
 
   // Helper method for API calls with enhanced CORS handling
@@ -36,6 +48,17 @@ class ApiService {
           throw new Error(`Resource not found: ${endpoint}`);
         } else if (response.status === 403) {
           throw new Error('Access forbidden - check API permissions');
+        } else if (response.status === 400) {
+          // Try to get the error message from response body
+          let errorMessage = 'Bad Request';
+          try {
+            const errorBody = await response.text();
+            console.error('400 Error details:', errorBody);
+            errorMessage = errorBody || 'Bad Request';
+          } catch (e) {
+            console.error('Could not read error response body');
+          }
+          throw new Error(`Validation error: ${errorMessage}`);
         } else if (response.status === 500) {
           throw new Error('Server error - backend may be down');
         }
@@ -49,14 +72,26 @@ class ApiService {
         return await response.text();
       }
     } catch (error) {
-      console.error('API call failed:', error);
+      console.error(`API Call Failed: ${config.method || 'GET'} ${url}`, error);
+      
+      // Enhanced error handling for SSL/HTTPS connection issues
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        console.error('🔴 Connection failed - Backend server issues:');
+        console.error('  1. Backend server not running');
+        console.error('  2. SSL certificate invalid/missing (HTTPS required)');
+        console.error('  3. Network connectivity problems');
+        console.error('  4. CORS configuration issues');
+        console.error(`  🌐 Attempted URL: ${url}`);
+        console.error('  💡 For development: Ensure backend supports HTTPS or use self-signed certificates');
+        
+        throw new Error('BACKEND_ERROR: Cannot connect to server. Please ensure the backend is running with HTTPS/SSL support.');
+      }
       
       // Enhanced CORS error handling
       if (error.name === 'TypeError' && 
-          (error.message.includes('Failed to fetch') || 
-           error.message.includes('Network request failed') ||
+          (error.message.includes('Network request failed') ||
            error.message.includes('CORS'))) {
-        throw new Error('CORS_ERROR: Cannot connect to API server. The server may not have CORS enabled or may be down. Please ensure the backend server is running at http://air.local:8000 with proper CORS configuration.');
+        throw new Error('CORS_ERROR: Cannot connect to API server. The server may not have CORS enabled or may be down. Please ensure the backend server is running with HTTPS/SSL support and proper CORS configuration.');
       }
       
       if (error.message === 'CORS_ERROR') {
@@ -69,10 +104,33 @@ class ApiService {
 
   // User Management
   async createUser(userData) {
+    console.log('Creating user with data:', userData);
+    console.log('JSON payload:', JSON.stringify(userData));
     return this.apiCall('/users', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
+  }
+
+  async loginByUsername(username) {
+    console.log('Attempting to login with username:', username);
+    try {
+      // Use the backend login endpoint
+      const response = await this.apiCall('/users/login', {
+        method: 'POST',
+        body: JSON.stringify({ username: username }),
+      });
+      console.log('Login successful:', response);
+      return response;
+    } catch (error) {
+      console.log('Full error details:', error);
+      if (error.message.includes('Resource not found') || error.message.includes('User not found')) {
+        console.log('User not found with this username');
+        throw new Error('USER_NOT_FOUND: No user found with this username. Please create a new account or check your username.');
+      }
+      console.log('Login failed:', error.message);
+      throw error;
+    }
   }
 
   async getUser(uid) {
@@ -255,7 +313,7 @@ class ApiService {
           (error.message.includes('Failed to fetch') || 
            error.message.includes('Network request failed') ||
            error.message.includes('CORS'))) {
-        throw new Error('CORS_ERROR: Cannot connect to API server for emoji upload. Please ensure the backend server is running at http://air.local:8000 with proper CORS configuration.');
+        throw new Error('CORS_ERROR: Cannot connect to API server for emoji upload. Please ensure the backend server is running with HTTPS/SSL support and proper CORS configuration.');
       }
       
       if (error.message === 'CORS_ERROR') {
@@ -274,14 +332,18 @@ class ApiService {
 
   // WebSocket connection helper
   createWebSocket(roomId, userId) {
-    const wsUrl = `ws://air.local:8000/ws/${roomId}/${userId}`;
+    const wsHost = process.env.NODE_ENV === 'production' 
+      ? window.location.host 
+      : 'air.local:8000';
+    const wsProtocol = process.env.NODE_ENV === 'production' ? 'ws' : 'ws';
+    const wsUrl = `${wsProtocol}://${wsHost}/ws/${roomId}/${userId}`;
     console.log('Creating WebSocket connection to:', wsUrl);
     
     try {
       const ws = new WebSocket(wsUrl);
       return ws;
     } catch (error) {
-      console.warn('WebSocket not supported or failed to create:', error);
+      console.warn('WebSocket connection failed:', error);
       throw new Error('WebSocket connection not available');
     }
   }

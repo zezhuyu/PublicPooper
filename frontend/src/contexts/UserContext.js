@@ -52,6 +52,27 @@ export const UserProvider = ({ children }) => {
     }
   };
 
+  const loginByUsername = async (username) => {
+    try {
+      console.log('Attempting to login by username:', username);
+      const foundUser = await apiService.loginByUsername(username);
+      setUser(foundUser);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('publicpooper_user', JSON.stringify(foundUser));
+      }
+      return foundUser;
+    } catch (error) {
+      console.error('Username login failed:', error);
+      
+      // Enhanced error handling for CORS issues
+      if (error.message.includes('CORS_ERROR')) {
+        throw new Error('Login blocked by CORS policy. Please ensure the backend server is running and has CORS properly configured.');
+      }
+      
+      throw error;
+    }
+  };
+
   const logoutUser = () => {
     setUser(null);
     if (typeof window !== 'undefined') {
@@ -63,6 +84,7 @@ export const UserProvider = ({ children }) => {
     user,
     loading,
     loginUser,
+    loginByUsername,
     logoutUser,
     isLoggedIn: !!user,
     isPremium: user?.type === 'premium',
