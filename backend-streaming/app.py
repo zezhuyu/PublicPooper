@@ -67,5 +67,5 @@ def signaling(ws, stream_id):
 
 if __name__ == '__main__':
     context = ('cert.pem', 'key.pem')  # Cert, Key
-    app.run(host='0.0.0.0', port=5000, ssl_context=context, debug=True)
+    app.run(host='0.0.0.0', port=5005, ssl_context=context, debug=True)
 

@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict, Set
 import sqlite3
@@ -17,7 +18,7 @@ import io
 from db import init_database
 
 app = FastAPI(title="PublicPooper API", version="1.0.0")
-
+streams = {}
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -34,8 +35,21 @@ EMOJI_UPLOAD_DIR = "emojis"
 # Create emoji directory if it doesn't exist
 os.makedirs(EMOJI_UPLOAD_DIR, exist_ok=True)
 
+# Create templates directory if it doesn't exist
+os.makedirs("templates", exist_ok=True)
+
 # Mount static files for emoji serving
 app.mount("/emojis", StaticFiles(directory=EMOJI_UPLOAD_DIR), name="emojis")
+
+# Setup Jinja2 templates
+templates = Jinja2Templates(directory="templates")
+
+# WebRTC Signaling - Store active streams with multiple viewers support
+streams: Dict[str, Dict[str, List[WebSocket]]] = {}
+# Store viewer ID mappings: {stream_id: {websocket: viewer_id}}
+viewer_id_mappings: Dict[str, Dict[WebSocket, int]] = {}
+# Store next available viewer ID for each stream
+next_viewer_ids: Dict[str, int] = {}
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -246,7 +260,191 @@ class EmojiResponse(BaseModel):
 async def startup_event():
     init_database()
 
-# Emoji endpoints
+@app.get("/static/webrtc.js")
+async def webrtc_js(request: Request):
+    return templates.TemplateResponse("webrtc.js", {
+        "request": request
+    })
+
+# HTML Template routes for WebRTC streaming
+@app.get("/stream/{stream_id}", response_class=HTMLResponse)
+async def stream_page(request: Request, stream_id: str):
+    """Serve the broadcaster page for a specific stream"""
+    return templates.TemplateResponse("stream.html", {
+        "request": request,
+        "stream_id": stream_id
+    })
+
+@app.get("/watch/{stream_id}", response_class=HTMLResponse)
+async def watch_page(request: Request, stream_id: str):
+    """Serve the viewer page for a specific stream"""
+    return templates.TemplateResponse("watch.html", {
+        "request": request,
+        "stream_id": stream_id
+    })
+
+@app.get("/watch-all", response_class=HTMLResponse)
+async def watch_all_page(request: Request):
+    """Serve the page to watch all active streams"""
+    # Get active stream IDs from the streams dictionary
+    active_stream_ids = list(streams.keys()) if streams else ['stream1', 'stream2', 'stream3']
+    
+    return templates.TemplateResponse("watch_all.html", {
+        "request": request,
+        "stream_ids": active_stream_ids
+    })
+
+# WebRTC Signaling endpoint
+@app.websocket("/signal/{stream_id}/{role}")
+async def webrtc_signaling(websocket: WebSocket, stream_id: str, role: str):
+    """WebRTC signaling endpoint for video streaming
+    
+    Connect with: ws://localhost:8000/signal/{stream_id}/{role}
+    Roles: 'broadcaster' or 'viewer'
+    
+    Supports one broadcaster and multiple viewers per stream.
+    Each viewer gets a unique ID for proper message routing.
+    """
+    await websocket.accept()
+    print(f"[{stream_id}] {role} connected")
+    
+    # Initialize stream if it doesn't exist
+    if stream_id not in streams:
+        streams[stream_id] = {"broadcaster": [], "viewer": []}
+        viewer_id_mappings[stream_id] = {}
+        next_viewer_ids[stream_id] = 1
+    
+    # Add connection to appropriate role list
+    if role not in streams[stream_id]:
+        streams[stream_id][role] = []
+    
+    streams[stream_id][role].append(websocket)
+    
+    # Assign unique viewer ID for message routing
+    viewer_id = None
+    if role == "viewer":
+        # Assign a new unique viewer ID
+        viewer_id = next_viewer_ids[stream_id]
+        next_viewer_ids[stream_id] += 1
+        viewer_id_mappings[stream_id][websocket] = viewer_id
+        print(f"[{stream_id}] Assigned viewer ID: {viewer_id}")
+    
+    try:
+        while True:
+            # Receive message from current role
+            message = await websocket.receive_text()
+            
+            if not message:
+                break
+            
+            try:
+                message_data = json.loads(message)
+                message_type = message_data.get("type", "unknown")
+                msg_viewer_id = message_data.get("viewerId")
+                
+                print(f"[{stream_id}] {role} sent: {message_type}" + 
+                      (f" (viewer {msg_viewer_id})" if msg_viewer_id else ""))
+                
+                # Route messages based on type and role
+                if role == "broadcaster":
+                    # Broadcaster messages go to specific viewer or all viewers
+                    if msg_viewer_id is not None:
+                        # Find viewer websocket by ID
+                        target_viewer = None
+                        for viewer_ws, vid in viewer_id_mappings.get(stream_id, {}).items():
+                            if vid == msg_viewer_id and viewer_ws in streams[stream_id].get("viewer", []):
+                                target_viewer = viewer_ws
+                                break
+                        
+                        if target_viewer:
+                            try:
+                                await target_viewer.send_text(message)
+                                print(f"[{stream_id}] Message sent to viewer {msg_viewer_id}")
+                            except Exception as e:
+                                print(f"[{stream_id}] Failed to send to viewer {msg_viewer_id}: {e}")
+                                # Remove disconnected viewer
+                                if target_viewer in streams[stream_id]["viewer"]:
+                                    streams[stream_id]["viewer"].remove(target_viewer)
+                                if target_viewer in viewer_id_mappings.get(stream_id, {}):
+                                    del viewer_id_mappings[stream_id][target_viewer]
+                        else:
+                            print(f"[{stream_id}] Viewer {msg_viewer_id} not found")
+                    else:
+                        # Broadcast to all viewers (for announcements)
+                        viewers = streams[stream_id].get("viewer", [])
+                        disconnected_viewers = []
+                        
+                        for viewer_ws in viewers:
+                            try:
+                                await viewer_ws.send_text(message)
+                                vid = viewer_id_mappings.get(stream_id, {}).get(viewer_ws, "unknown")
+                                print(f"[{stream_id}] Broadcast sent to viewer {vid}")
+                            except Exception as e:
+                                vid = viewer_id_mappings.get(stream_id, {}).get(viewer_ws, "unknown")
+                                print(f"[{stream_id}] Failed to send to viewer {vid}: {e}")
+                                disconnected_viewers.append(viewer_ws)
+                        
+                        # Remove disconnected viewers
+                        for viewer_ws in disconnected_viewers:
+                            if viewer_ws in streams[stream_id]["viewer"]:
+                                streams[stream_id]["viewer"].remove(viewer_ws)
+                            if viewer_ws in viewer_id_mappings.get(stream_id, {}):
+                                del viewer_id_mappings[stream_id][viewer_ws]
+                
+                elif role == "viewer":
+                    # Viewer messages go to broadcaster with viewer ID attached
+                    if viewer_id is not None and "viewerId" not in message_data:
+                        # Add viewer ID to message
+                        message_data["viewerId"] = viewer_id
+                        message = json.dumps(message_data)
+                    
+                    broadcasters = streams[stream_id].get("broadcaster", [])
+                    disconnected_broadcasters = []
+                    
+                    for broadcaster_ws in broadcasters:
+                        try:
+                            await broadcaster_ws.send_text(message)
+                        except Exception as e:
+                            print(f"[{stream_id}] Failed to send to broadcaster: {e}")
+                            disconnected_broadcasters.append(broadcaster_ws)
+                    
+                    # Remove disconnected broadcasters
+                    for broadcaster_ws in disconnected_broadcasters:
+                        if broadcaster_ws in streams[stream_id]["broadcaster"]:
+                            streams[stream_id]["broadcaster"].remove(broadcaster_ws)
+            
+            except json.JSONDecodeError:
+                print(f"[{stream_id}] Invalid JSON received from {role}")
+            except Exception as e:
+                print(f"[{stream_id}] Error processing message from {role}: {e}")
+                    
+    except WebSocketDisconnect:
+        print(f"[{stream_id}] {role} disconnected normally")
+    except Exception as e:
+        print(f"WebRTC signaling error for {role} in stream {stream_id}: {e}")
+    finally:
+        # Remove this websocket from the appropriate role list
+        if stream_id in streams and role in streams[stream_id]:
+            if websocket in streams[stream_id][role]:
+                streams[stream_id][role].remove(websocket)
+                if role == "viewer" and viewer_id:
+                    print(f"[{stream_id}] Viewer {viewer_id} removed from stream")
+                    # Remove from viewer ID mapping
+                    if websocket in viewer_id_mappings.get(stream_id, {}):
+                        del viewer_id_mappings[stream_id][websocket]
+                else:
+                    print(f"[{stream_id}] {role} removed from stream")
+            
+            # Clean up empty streams
+            if (not streams[stream_id]["broadcaster"] and 
+                not streams[stream_id]["viewer"]):
+                del streams[stream_id]
+                if stream_id in viewer_id_mappings:
+                    del viewer_id_mappings[stream_id]
+                if stream_id in next_viewer_ids:
+                    del next_viewer_ids[stream_id]
+                print(f"[{stream_id}] Stream deleted - no active connections")
+
 @app.post("/emojis/upload/{uid}", response_model=EmojiResponse)
 async def upload_emoji(
     uid: str,
@@ -529,7 +727,7 @@ async def leave_room(rid: str, uid: str, db: sqlite3.Connection = Depends(get_db
     cursor = db.cursor()
     
     # Check if user is in room
-    cursor.execute("SELECT * FROM RoomUser WHERE uid = ? AND rid = ?", (uid, rid))
+    cursor.execute("SELECT * FROM RoomUser WHERE uid = ? AND rid = ? AND leaveAt IS NULL", (uid, rid))
     room_user = cursor.fetchone()
     
     if not room_user:
@@ -793,6 +991,37 @@ async def get_user_bets(uid: str, db: sqlite3.Connection = Depends(get_db)):
 async def health_check():
     return {"status": "healthy"}
 
+# WebRTC stream management
+@app.get("/streams")
+async def get_active_streams():
+    """Get list of active WebRTC streams with detailed viewer information"""
+    active_streams = []
+    for stream_id, roles in streams.items():
+        # Get viewer information with their IDs
+        viewer_info = []
+        if stream_id in viewer_id_mappings:
+            for viewer_ws, viewer_id in viewer_id_mappings[stream_id].items():
+                if viewer_ws in roles.get('viewer', []):
+                    viewer_info.append({
+                        "viewer_id": viewer_id,
+                        "connected": True
+                    })
+        
+        stream_info = {
+            "stream_id": stream_id,
+            "broadcaster_connected": len(roles.get('broadcaster', [])) > 0,
+            "viewers_connected": len(roles.get('viewer', [])),
+            "viewer_details": viewer_info,
+            "next_viewer_id": next_viewer_ids.get(stream_id, 1),
+            "total_connections": len(roles.get('broadcaster', [])) + len(roles.get('viewer', []))
+        }
+        active_streams.append(stream_info)
+    
+    return {
+        "active_streams": active_streams,
+        "total_streams": len(streams)
+    }
+
 # WebSocket endpoint
 @app.websocket("/ws/{room_id}/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
@@ -950,5 +1179,4 @@ async def get_connected_users(rid: str, db: sqlite3.Connection = Depends(get_db)
     return users
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicornuvicorn.run(app, host="0.0.0.0", port=8000)
