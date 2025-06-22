@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import ClientProvider from "../components/ClientProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Poop and Chat",
-  description: "A video chat platform for competitive pooping",
+  title: "PUBLICPOOPER - Competitive Pooping Platform",
+  description: "A real-time chat platform for competitive pooping with video chat capabilities",
 };
 
 export default function RootLayout({ children }) {
@@ -22,7 +23,9 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <ClientProvider>
+          {children}
+        </ClientProvider>
       </body>
     </html>
   );
