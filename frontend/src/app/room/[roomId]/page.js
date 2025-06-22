@@ -1,6 +1,23 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { 
+  FiMic, 
+  FiMicOff, 
+  FiVideo, 
+  FiVideoOff, 
+  FiMonitor, 
+  FiSettings, 
+  FiLogOut, 
+  FiPhone, 
+  FiPhoneCall,
+  FiSend,
+  FiCopy,
+  FiHash,
+  FiUsers,
+  FiEdit3
+} from 'react-icons/fi';
+import { BsCircleFill } from 'react-icons/bs';
 
 export default function RoomPage() {
   const params = useParams();
@@ -18,7 +35,7 @@ export default function RoomPage() {
       avatar: 'N',
       color: 'blue',
       time: 'Today at 2:15 PM',
-      content: 'Hey everyone! Ready to start drawing?'
+      content: 'Hey everyone! Ready for some competitive pooping? 💩'
     },
     {
       id: 2,
@@ -26,7 +43,7 @@ export default function RoomPage() {
       avatar: 'C',
       color: 'green',
       time: 'Today at 2:16 PM',
-      content: "Absolutely! I've got my tablet ready 🎨"
+      content: "Absolutely! I've been holding it in all day for this! 🚽"
     },
     {
       id: 3,
@@ -34,7 +51,7 @@ export default function RoomPage() {
       avatar: 'W',
       color: 'purple',
       time: 'Today at 2:17 PM',
-      content: 'Can we all see the shared canvas? Testing the connection...'
+      content: 'Can everyone see my bathroom setup? Testing the video connection...'
     },
     {
       id: 4,
@@ -42,7 +59,7 @@ export default function RoomPage() {
       avatar: 'F',
       color: 'orange',
       time: 'Today at 2:18 PM',
-      content: 'Yes! Looking good. Love the collaborative features!'
+      content: 'Yes! Looking good. Love the synchronized pooping features!'
     },
     {
       id: 5,
@@ -50,15 +67,15 @@ export default function RoomPage() {
       avatar: 'M',
       color: 'red',
       time: 'Today at 2:19 PM',
-      content: 'This is amazing! Real-time collaboration while video chatting 🚀'
+      content: 'This is amazing! Real-time poop competition while video chatting 🚀'
     }
   ]);
 
   const videoParticipants = [
-    { name: "Clyde's Cousin", isDrawing: true, content: '🎨 Drawing...' },
-    { name: "Clyde's Friend", isDrawing: false, content: '🎵' },
-    { name: 'Wumpus', isDrawing: true, content: '🖼️ Art in progress...' },
-    { name: 'Nelly', isDrawing: false, content: '😺', isLive: true },
+    { name: "Clyde's Cousin", isPooping: true, content: '🚽 Pooping...' },
+    { name: "Clyde's Friend", isPooping: false, content: '🎵' },
+    { name: 'Wumpus', isPooping: true, content: '� In progress...' },
+    { name: 'Nelly', isPooping: false, content: '😺', isLive: true },
   ];
 
   const sendMessage = () => {
@@ -100,15 +117,16 @@ export default function RoomPage() {
         <div className="px-4 py-3 border-b border-gray-700">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-lg flex items-center">
-              <span className="text-gray-400">#</span>
+              <FiHash className="text-gray-400 w-5 h-5" />
               <span className="ml-2">room-chat</span>
             </h2>
             <button
               onClick={copyRoomId}
-              className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
+              className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded flex items-center gap-1"
               title="Copy Room ID"
             >
-              📋 {roomId.slice(0, 8)}...
+              <FiCopy className="w-3 h-3" />
+              {roomId.slice(0, 8)}...
             </button>
           </div>
           <div className="text-xs text-gray-400 mt-1">Room ID: {roomId}</div>
@@ -149,9 +167,7 @@ export default function RoomPage() {
               onClick={sendMessage}
               className="p-2 text-gray-400 hover:text-white"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
+              <FiSend className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -163,21 +179,29 @@ export default function RoomPage() {
         <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <span className="mr-2">🔊</span>
-              <h3 className="font-semibold">Draw and Chat Room</h3>
+              <FiUsers className="mr-2 w-5 h-5 text-green-400" />
+              <h3 className="font-semibold">Poop and Chat Room</h3>
               <span className="ml-2 text-sm text-gray-400">({roomId})</span>
             </div>
             <div className="flex items-center space-x-2">
-              <button className="p-2 hover:bg-gray-600 rounded" title="Call">📞</button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Video">📹</button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Screen Share">📺</button>
-              <button className="p-2 hover:bg-gray-600 rounded" title="Settings">⚙️</button>
+              <button className="p-2 hover:bg-gray-600 rounded" title="Call">
+                <FiPhoneCall className="w-5 h-5" />
+              </button>
+              <button className="p-2 hover:bg-gray-600 rounded" title="Video">
+                <FiVideo className="w-5 h-5" />
+              </button>
+              <button className="p-2 hover:bg-gray-600 rounded" title="Screen Share">
+                <FiMonitor className="w-5 h-5" />
+              </button>
+              <button className="p-2 hover:bg-gray-600 rounded" title="Settings">
+                <FiSettings className="w-5 h-5" />
+              </button>
               <button
                 onClick={leaveRoom}
                 className="p-2 hover:bg-red-600 bg-red-500 rounded text-white"
                 title="Leave Room"
               >
-                🚪
+                <FiLogOut className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -200,16 +224,17 @@ export default function RoomPage() {
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
                   {participant.name}
                   {participant.isLive && (
-                    <span className="ml-2 bg-red-500 text-white text-xs px-1 rounded">
+                    <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                      <BsCircleFill className="w-2 h-2" />
                       LIVE
                     </span>
                   )}
                 </div>
 
-                {/* Drawing Indicator */}
-                {participant.isDrawing && (
-                  <div className="absolute top-2 right-2 bg-blue-500 p-1 rounded">
-                    ✏️
+                {/* Pooping Indicator */}
+                {participant.isPooping && (
+                  <div className="absolute top-2 right-2 bg-brown-500 p-2 rounded flex items-center justify-center">
+                    <FiEdit3 className="w-4 h-4 text-white" />
                   </div>
                 )}
               </div>
@@ -219,9 +244,12 @@ export default function RoomPage() {
           {/* Main Screen Share Area */}
           <div className="mt-4 bg-gray-700 rounded-lg p-4 text-center">
             <div className="bg-white text-black p-8 rounded inline-block">
-              <div className="text-6xl mb-4">📐</div>
-              <div className="text-xl font-semibold">Nelly's Stream</div>
-              <div className="text-red-500 font-bold">● LIVE</div>
+              <div className="text-6xl mb-4">🚽</div>
+              <div className="text-xl font-semibold">Nelly's Toilet Stream</div>
+              <div className="text-red-500 font-bold flex items-center justify-center gap-2">
+                <BsCircleFill className="w-3 h-3" />
+                LIVE
+              </div>
             </div>
           </div>
         </div>
@@ -235,7 +263,7 @@ export default function RoomPage() {
             }`}
             title={isMuted ? 'Unmute' : 'Mute'}
           >
-            {isMuted ? '🔇' : '🎤'}
+            {isMuted ? <FiMicOff className="w-5 h-5" /> : <FiMic className="w-5 h-5" />}
           </button>
           
           <button
@@ -245,7 +273,7 @@ export default function RoomPage() {
             }`}
             title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
           >
-            {isVideoOff ? '📹' : '📹'}
+            {isVideoOff ? <FiVideoOff className="w-5 h-5" /> : <FiVideo className="w-5 h-5" />}
           </button>
           
           <button
@@ -255,7 +283,7 @@ export default function RoomPage() {
             }`}
             title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
           >
-            📺
+            <FiMonitor className="w-5 h-5" />
           </button>
           
           <button
@@ -263,7 +291,7 @@ export default function RoomPage() {
             className="p-3 rounded-full bg-red-500 hover:bg-red-600"
             title="Leave call"
           >
-            📞
+            <FiPhone className="w-5 h-5" />
           </button>
         </div>
       </div>

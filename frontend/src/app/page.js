@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FiPlus, FiUsers, FiHome, FiEdit3, FiZap } from 'react-icons/fi';
+import { BsCircleFill } from 'react-icons/bs';
 
 export default function Home() {
   const [roomId, setRoomId] = useState('');
@@ -34,8 +36,9 @@ export default function Home() {
             <button
               onClick={createNewRoom}
               disabled={isJoining}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
+              <FiPlus className="w-5 h-5" />
               {isJoining ? 'Creating Room...' : 'Create New Room'}
             </button>
 
@@ -60,8 +63,9 @@ export default function Home() {
               <button
                 onClick={() => joinRoom(roomId)}
                 disabled={!roomId.trim() || isJoining}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
+                <FiUsers className="w-5 h-5" />
                 {isJoining ? 'Joining...' : 'Join Room'}
               </button>
             </div>
@@ -71,39 +75,54 @@ export default function Home() {
             <h3 className="text-sm font-semibold text-gray-300 mb-3">Recent Rooms</h3>
             <div className="space-y-2">
               <button
-                onClick={() => joinRoom('art-studio-2024')}
+                onClick={() => joinRoom('bathroom-buddies-2024')}
                 className="w-full text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">🎨 Art Studio</div>
-                    <div className="text-sm text-gray-400">art-studio-2024</div>
+                  <div className="flex items-center gap-3">
+                    <FiHome className="w-5 h-5 text-blue-400" />
+                    <div>
+                      <div className="font-medium">Bathroom Buddies</div>
+                      <div className="text-sm text-gray-400">bathroom-buddies-2024</div>
+                    </div>
                   </div>
-                  <div className="text-green-400 text-sm">4 online</div>
+                  <div className="flex items-center gap-1 text-green-400 text-sm">
+                    <BsCircleFill className="w-2 h-2" />
+                    4 online
+                  </div>
                 </div>
               </button>
               
               <button
-                onClick={() => joinRoom('creative-minds-hub')}
+                onClick={() => joinRoom('competitive-poopers')}
                 className="w-full text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">💡 Creative Minds</div>
-                    <div className="text-sm text-gray-400">creative-minds-hub</div>
+                  <div className="flex items-center gap-3">
+                    <FiZap className="w-5 h-5 text-yellow-400" />
+                    <div>
+                      <div className="font-medium">Competitive Poopers</div>
+                      <div className="text-sm text-gray-400">competitive-poopers</div>
+                    </div>
                   </div>
-                  <div className="text-green-400 text-sm">2 online</div>
+                  <div className="flex items-center gap-1 text-green-400 text-sm">
+                    <BsCircleFill className="w-2 h-2" />
+                    2 online
+                  </div>
                 </div>
               </button>
 
               <button
-                onClick={() => joinRoom('design-workshop')}
+                onClick={() => joinRoom('toilet-talk-lounge')}
                 className="w-full text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">🖌️ Design Workshop</div>
-                    <div className="text-sm text-gray-400">design-workshop</div>
+                  <div className="flex items-center gap-3">
+                    <FiEdit3 className="w-5 h-5 text-purple-400" />
+                    <div>
+                      <div className="font-medium">Toilet Talk Lounge</div>
+                      <div className="text-sm text-gray-400">toilet-talk-lounge</div>
+                    </div>
                   </div>
                   <div className="text-gray-400 text-sm">offline</div>
                 </div>
