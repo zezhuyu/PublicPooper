@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+.conda
+.env
+
+publicpooper.db
+*.db
+*.db-journal
+*.db-trace
+*.db-lock
+*.db-wal
+*.db-shm

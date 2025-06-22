@@ -1,0 +1,62 @@
+CREATE TABLE Users (
+    uid TEXT PRIMARY KEY,
+    uname TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL,
+    createAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Room (
+    rid TEXT PRIMARY KEY,
+    rname TEXT UNIQUE,
+    user_limit INTEGER,
+    type TEXT NOT NULL,
+    duration REAL NOT NULL,
+    createAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE RoomUser (
+    uid TEXT REFERENCES Users(uid) ON DELETE CASCADE,
+    rid TEXT REFERENCES Room(rid) ON DELETE CASCADE,
+    joinAt TIMESTAMP NOT NULL,
+    leaveAt TIMESTAMP NOT NULL,
+    duration REAL NOT NULL,
+    PRIMARY KEY (uid, rid)
+);
+
+CREATE TABLE IF NOT EXISTS Emoji (
+    eid TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    filename TEXT NOT NULL,
+    uploadedBy TEXT REFERENCES Users(uid) ON DELETE CASCADE,
+    isPremium INTEGER DEFAULT 0,
+    createAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Chat (
+    uid TEXT REFERENCES Users(uid) ON DELETE CASCADE NOT NULL,
+    rid TEXT REFERENCES Room(rid) ON DELETE CASCADE NOT NULL,
+    targetUid TEXT NULL REFERENCES Users(uid) ON DELETE CASCADE,
+    comment TEXT NOT NULL,
+    createAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (uid, rid, createAt)
+);
+
+CREATE TABLE Bet (
+    uid TEXT REFERENCES Users(uid) ON DELETE CASCADE,
+    rid TEXT REFERENCES Room(rid) ON DELETE CASCADE,
+    bet REAL DEFAULT 0.0,
+    createAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (uid, rid, createAt)
+);
+
+CREATE TABLE LeaderBoard (
+    uid TEXT PRIMARY KEY,
+    spendTime REAL NOT NULL,
+    recording TEXT
+);
+
+
+CREATE INDEX idx_user ON Users(uid);
+CREATE INDEX idx_room ON Room(rid);
+CREATE INDEX idx_leadboard ON LeaderBoard(uid);
