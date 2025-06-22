@@ -12,6 +12,8 @@ import shutil
 import re
 import json
 import asyncio
+from PIL import Image
+import io
 from db import init_database
 
 app = FastAPI(title="PublicPooper API", version="1.0.0")
@@ -47,13 +49,13 @@ class ConnectionManager:
         """Accept WebSocket connection and add to room"""
         await websocket.accept()
         
-        # Initialize room if it doesn't exist
-        if room_id not in self.active_connections:
-            self.active_connections[room_id] = {}
-        
         # Remove user from previous room if connected elsewhere
         if user_id in self.user_connections:
             await self.disconnect_user(user_id)
+        
+        # Initialize room if it doesn't exist (do this AFTER disconnect to avoid deletion)
+        if room_id not in self.active_connections:
+            self.active_connections[room_id] = {}
         
         # Add user to room
         self.active_connections[room_id][user_id] = websocket
@@ -81,15 +83,16 @@ class ConnectionManager:
             if room_id in self.active_connections and user_id in self.active_connections[room_id]:
                 del self.active_connections[room_id][user_id]
                 
-                # Clean up empty rooms
+                # Only clean up empty rooms if no one else is connecting
+                # (This prevents race conditions during reconnection)
                 if not self.active_connections[room_id]:
                     del self.active_connections[room_id]
             
             # Remove from user tracking
             del self.user_connections[user_id]
             
-            # Notify room about user leaving
-            if room_id in self.active_connections:
+            # Notify room about user leaving (only if room still exists and has users)
+            if room_id in self.active_connections and self.active_connections[room_id]:
                 await self.broadcast_to_room(room_id, {
                     "type": "user_left",
                     "user_id": user_id,
@@ -141,7 +144,8 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 def get_db():
-    conn = sqlite3.connect(DATABASE_PATH)
+    """Create a new database connection for each request (thread-safe)"""
+    conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -251,12 +255,13 @@ async def upload_emoji(
     file: UploadFile = File(...),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    """Upload an emoji file
+    """Upload an emoji file with automatic resizing
     
     Rules:
     - Only premium users can upload emojis
     - Premium users can mark their uploads as premium or regular
     - Normal users cannot upload any emojis
+    - Images are automatically resized to max 128x128 pixels
     """
     cursor = db.cursor()
     
@@ -282,17 +287,40 @@ async def upload_emoji(
     if cursor.fetchone():
         raise HTTPException(status_code=400, detail="Emoji name already exists")
     
-    # Generate unique filename
-    file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'png'
-    filename = f"{name}_{uuid.uuid4().hex[:8]}.{file_extension}"
-    file_path = os.path.join(EMOJI_UPLOAD_DIR, filename)
-    
-    # Save file
+    # Process and resize the image
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Read the uploaded file
+        file_content = await file.read()
+        
+        # Open image with PIL
+        with Image.open(io.BytesIO(file_content)) as img:
+            # Convert to RGBA to ensure transparency support
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
+            # Get original dimensions
+            original_width, original_height = img.size
+            
+            # Calculate new dimensions (max 128x128, maintain aspect ratio)
+            max_size = 128
+            if original_width > max_size or original_height > max_size:
+                # Calculate scaling factor to maintain aspect ratio
+                scale_factor = min(max_size / original_width, max_size / original_height)
+                new_width = int(original_width * scale_factor)
+                new_height = int(original_height * scale_factor)
+                
+                # Resize the image using high-quality resampling
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Generate unique filename (always save as PNG for consistency)
+            filename = f"{name}_{uuid.uuid4().hex[:8]}.png"
+            file_path = os.path.join(EMOJI_UPLOAD_DIR, filename)
+            
+            # Save the processed image
+            img.save(file_path, "PNG", optimize=True)
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to process image: {str(e)}")
     
     # Save to database
     eid = str(uuid.uuid4())
@@ -417,7 +445,7 @@ async def get_user(uid: str, db: sqlite3.Connection = Depends(get_db)):
         type=user_row["type"],
         createAt=user_row["createAt"]
     )
-
+        
 # Room endpoints
 @app.post("/rooms/{room_name}/join/{uid}", response_model=RoomJoinResponse)
 async def join_or_create_room(room_name: str, uid: str, room_data: Optional[RoomCreate] = None, db: sqlite3.Connection = Depends(get_db)):
@@ -501,7 +529,7 @@ async def leave_room(rid: str, uid: str, db: sqlite3.Connection = Depends(get_db
     cursor = db.cursor()
     
     # Check if user is in room
-    cursor.execute("SELECT * FROM RoomUser WHERE uid = ? AND rid = ? AND leaveAt IS NULL", (uid, rid))
+    cursor.execute("SELECT * FROM RoomUser WHERE uid = ? AND rid = ?", (uid, rid))
     room_user = cursor.fetchone()
     
     if not room_user:
@@ -561,6 +589,25 @@ async def get_room_users(rid: str, db: sqlite3.Connection = Depends(get_db)):
         ))
     
     return users
+
+@app.get("/rooms", response_model=List[RoomResponse])
+async def get_all_rooms(db: sqlite3.Connection = Depends(get_db)):
+    """Get all available rooms"""
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM Room ORDER BY createAt DESC")
+    
+    rooms = []
+    for row in cursor.fetchall():
+        rooms.append(RoomResponse(
+            rid=row["rid"],
+            rname=row["rname"],
+            user_limit=row["user_limit"],
+            type=row["type"],
+            duration=row["duration"],
+            createAt=row["createAt"]
+        ))
+    
+    return rooms
 
 # Chat endpoints
 @app.post("/rooms/{rid}/chat/{uid}", response_model=ChatResponse)
@@ -757,7 +804,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
     - Incoming: {"type": "chat", "comment": "Hello!", "targetUid": null}
     - Outgoing: {"type": "chat", "uid": "user123", "comment": "Hello!", "timestamp": "..."}
     """
-    # Verify user exists
+    # Verify user exists (create new connection for this thread)
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -798,7 +845,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_id: str):
                 comment = message_data.get("comment", "")
                 target_uid = message_data.get("targetUid")
                 
-                # Validate chat permissions based on room type
+                # Create new database connection for each message (thread-safe)
                 conn = sqlite3.connect(DATABASE_PATH)
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
