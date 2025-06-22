@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Watch All Streams</title>
+</head>
+<body>
+  <h1>Watching All Streams</h1>
+
+  {% for stream_id in stream_ids %}
+    <div>
+      <h3>{{ stream_id }}</h3>
+      <video id="video-{{ stream_id }}" autoplay playsinline controls width="320" height="240"></video>
+    </div>
+  {% endfor %}
+
+  <script src="/static/webrtc.js"></script>
+  <script>
+    const streamIds = {{ stream_ids|tojson }};
+    for (const id of streamIds) {
+      setupWebRTC('viewer', id, `video-${id}`);
+    }
+  </script>
+</body>
+</html>
+

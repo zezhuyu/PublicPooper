@@ -134,12 +134,11 @@ export default function Home() {
                 <button
                   key={category}
                   onClick={() => setSelectedCategory(category)}
-                  className={`px-6 py-2 font-bold border-2 transition-all duration-200 rounded-lg shadow-md ${
+                  className={`px-6 py-2 text-sm font-bold border-2 transition-all duration-200 rounded-lg shadow-md ${frijole.className} ${
                     selectedCategory === category
                       ? 'bg-amber-700 text-white border-amber-700 shadow-lg transform scale-105'
                       : 'bg-white text-amber-800 border-amber-600 hover:bg-amber-100 hover:shadow-lg'
                   }`}
-                  style={{fontFamily: 'Impact, Arial Black, sans-serif'}}
                 >
                   {category}
                 </button>
@@ -152,7 +151,7 @@ export default function Home() {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2 text-amber-900">{selectedCategory} ROOMS</h2>
+          <h2 className={`text-3xl font-bold mb-2 text-amber-900 ${frijole.className}`}>{selectedCategory} ROOMS</h2>
           <p className="text-amber-700">Join other poopers in {selectedCategory.toLowerCase()} activities</p>
         </div>
 
